@@ -17,6 +17,13 @@ export class serialManager {
         this.okRespTimeout = false;
         this.timeoutID = undefined;
 
+        // Serial log to a file: batches are POSTed to the dev server (vite.config.js,
+        // serial-log plugin). Without that endpoint (e.g. static hosting) it disables itself.
+        this.logQueue = [];
+        this.logEnabled = true;
+        this.logFlushing = false;
+        setInterval(() => this.flushLog(), 250);
+
         this.bootCommands = [
             "G90",
             "M260 A112 B1 S1",
@@ -47,10 +54,31 @@ export class serialManager {
         dir = "[RECE]"
         }
         
+        if(this.logEnabled){
+            this.logQueue.push({ t: timestamp, dir: dir.slice(1, 5), msg: message });
+        }
+
         newConsoleEntry.innerHTML = dir + " - " + timestamp + " - " + message + '\n';
         this.consoleDiv.appendChild(newConsoleEntry)
         
         this.consoleDiv.scrollTop = this.consoleDiv.scrollHeight;
+    }
+
+    async flushLog(){
+        if(!this.logEnabled || this.logFlushing || this.logQueue.length == 0) return;
+        this.logFlushing = true;
+        const batch = this.logQueue.splice(0);
+        try {
+            const response = await fetch("./__serial-log", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(batch)
+            });
+            if(!response.ok) this.logEnabled = false;
+        } catch (error) {
+            this.logEnabled = false;
+        }
+        this.logFlushing = false;
     }
 
     clearBuffer(){
